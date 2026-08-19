@@ -13,6 +13,7 @@ import {
   applyForcedSwap,
   createBattle,
   effectLabel,
+  fighterSkills,
   resolveTurn,
   type Battle,
   type BattleAction,
@@ -50,6 +51,7 @@ export function BattleScreen({
   label,
   onFinish,
   onUseItem,
+  startState,
 }: {
   arena: string;
   round?: number;
@@ -57,12 +59,28 @@ export function BattleScreen({
   enemyTeam: RobotSave[];
   items: Record<string, number>;
   label: string;
-  onFinish: (result: "win" | "lose") => void;
+  onFinish: (
+    result: "win" | "lose",
+    snapshot?: Record<string, { hp: number; mp: number }>,
+  ) => void;
   onUseItem: (itemId: string) => void;
+  /** HP/MP herdados de uma luta anterior (Torre de Babel, sobrevivência...). */
+  startState?: Record<string, { hp: number; mp: number }>;
 }) {
-  const [battle, setBattle] = useState<Battle>(() =>
-    createBattle({ arena, playerTeam, enemyTeam, items }),
-  );
+  const [battle, setBattle] = useState<Battle>(() => {
+    const b = createBattle({ arena, playerTeam, enemyTeam, items });
+    if (startState) {
+      for (const f of b.player.fighters) {
+        const st = startState[f.robotId];
+        if (!st) continue;
+        f.hp = Math.max(0, Math.min(f.maxHp, Math.round(f.maxHp * st.hp)));
+        f.mp = Math.max(0, Math.min(f.maxMp, Math.round(f.maxMp * st.mp)));
+      }
+      const first = b.player.fighters.findIndex((f) => f.hp > 0);
+      b.player.active = first >= 0 ? first : 0;
+    }
+    return b;
+  });
   const [queue, setQueue] = useState<BattleEvent[]>([]);
   const [clips, setClips] = useState<Record<Side, Clip>>({ player: "enter", enemy: "enter" });
   const [vfx, setVfx] = useState<{ side: Side; url: string; key: number } | null>(null);
@@ -75,7 +93,8 @@ export function BattleScreen({
   const busy = queue.length > 0;
   const pActive = activeOf(battle, "player");
   const eActive = activeOf(battle, "enemy");
-  const pDef = ROBOT_MAP[pActive.robotId];
+  const pSkills = fighterSkills(pActive);
+  const pGuard = pSkills.find((s) => s.kind === "defense") ?? pSkills[pSkills.length - 1];
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -251,9 +270,9 @@ export function BattleScreen({
                 <PixelButton onClick={() => setMenu("swap")}>TROCAR</PixelButton>
                 <PixelButton
                   onClick={() =>
-                    act({ kind: "skill", skillId: pDef.skills[3].id })
+                    act({ kind: "skill", skillId: pGuard.id })
                   }
-                  disabled={pActive.mp < pDef.skills[3].mp}
+                  disabled={pActive.mp < pGuard.mp}
                 >
                   DEFENDER
                 </PixelButton>
@@ -262,7 +281,7 @@ export function BattleScreen({
             {menu === "skills" && (
               <Panel>
                 <div style={{ display: "grid", gap: 4 }}>
-                  {pDef.skills.map((s) => (
+                  {pSkills.map((s) => (
                     <PixelButton
                       key={s.id}
                       disabled={pActive.mp < s.mp}
@@ -349,7 +368,19 @@ export function BattleScreen({
             <div style={{ display: "grid", placeItems: "center", marginBottom: 10 }}>
               <img src={`/ui/icon_${battle.result === "win" ? "trophy" : "skull"}.png`} alt="" width={48} height={48} />
             </div>
-            <PixelButton onClick={() => onFinish(battle.result ?? "lose")}>
+            <PixelButton
+              onClick={() =>
+                onFinish(
+                  battle.result ?? "lose",
+                  Object.fromEntries(
+                    battle.player.fighters.map((f) => [
+                      f.robotId,
+                      { hp: f.hp / f.maxHp, mp: f.mp / f.maxMp },
+                    ]),
+                  ),
+                )
+              }
+            >
               CONTINUAR
             </PixelButton>
           </Panel>
