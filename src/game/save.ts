@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { GENERAL } from "./config";
 import { playerMaxXP, type RobotSave } from "./engine";
-import { ROBOTS, STARTER_ROBOTS } from "./robots";
+import { ROBOT_MAP, ROBOTS, STARTER_ROBOTS } from "./robots";
+import { defaultLoadout, MAX_LOADOUT } from "./skills";
 
 export interface GameState {
   version: number;
@@ -13,6 +14,17 @@ export interface GameState {
   items: Record<string, number>;
   wonTournaments: string[];
   battlesWon: number;
+  /** 4 habilidades escolhidas por robô. */
+  loadouts: Record<string, string[]>;
+  /** progresso dos modos de jogo. */
+  modes: {
+    babelFloor: number;
+    babelBest: number;
+    survivalBest: number;
+    quickWins: number;
+    bossRushBest: number;
+    chaosWins: number;
+  };
 }
 
 const KEY = "campeoes-mecha-save-v1";
@@ -33,6 +45,15 @@ function initialState(): GameState {
     items: { repair_kit: 2, energy_cell: 1 },
     wonTournaments: [],
     battlesWon: 0,
+    loadouts: {},
+    modes: {
+      babelFloor: 1,
+      babelBest: 0,
+      survivalBest: 0,
+      quickWins: 0,
+      bossRushBest: 0,
+      chaosWins: 0,
+    },
   };
 }
 
@@ -43,7 +64,13 @@ function read(): GameState {
     if (!raw) return initialState();
     const parsed = JSON.parse(raw) as GameState;
     if (!parsed.robots?.length) return initialState();
-    return { ...initialState(), ...parsed };
+    const base = initialState();
+    return {
+      ...base,
+      ...parsed,
+      loadouts: parsed.loadouts ?? {},
+      modes: { ...base.modes, ...(parsed.modes ?? {}) },
+    };
   } catch {
     return initialState();
   }
@@ -157,5 +184,26 @@ export function incBattlesWon() {
 export function teamSaves(s: GameState): RobotSave[] {
   return s.team
     .map((id) => s.robots.find((r) => r.id === id))
-    .filter((r): r is RobotSave => Boolean(r));
+    .filter((r): r is RobotSave => Boolean(r))
+    .map((r) => ({ ...r, loadout: loadoutOf(s, r.id) }));
+}
+
+// ------------------------------------------------------------- loadouts
+export function loadoutOf(s: GameState, robotId: string): string[] {
+  const def = ROBOT_MAP[robotId];
+  if (!def) return [];
+  const valid = new Set(def.skills.map((k) => k.id));
+  const saved = (s.loadouts[robotId] ?? []).filter((id) => valid.has(id));
+  return saved.length === MAX_LOADOUT ? saved : defaultLoadout(def.skills);
+}
+
+export function setLoadout(robotId: string, skillIds: string[]) {
+  setState((st) => ({
+    ...st,
+    loadouts: { ...st.loadouts, [robotId]: skillIds.slice(0, MAX_LOADOUT) },
+  }));
+}
+
+export function setModeProgress(patch: Partial<GameState["modes"]>) {
+  setState((st) => ({ ...st, modes: { ...st.modes, ...patch } }));
 }
