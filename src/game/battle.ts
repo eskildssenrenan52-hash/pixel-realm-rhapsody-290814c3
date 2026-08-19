@@ -7,6 +7,7 @@ import {
   type RobotSave,
 } from "./engine";
 import { ROBOT_MAP, type EffectType, type Skill } from "./robots";
+import { defaultLoadout, MAX_LOADOUT } from "./skills";
 
 export type Side = "player" | "enemy";
 
@@ -30,6 +31,28 @@ export interface Fighter {
   agl: number;
   effects: ActiveEffect[];
   ai: boolean;
+  /** ids das 4 habilidades levadas para a partida. */
+  skillIds: string[];
+  /** turnos restantes de postura de contra-ataque. */
+  counter: number;
+}
+
+/** Escolhe um kit de 4 habilidades para um robô controlado pela IA. */
+export function aiLoadout(robotId: string, seed: number): string[] {
+  const kit = ROBOT_MAP[robotId].skills;
+  const atk = kit.filter((s) => s.kind === "attack");
+  const def = kit.filter((s) => s.kind === "defense");
+  const pick = <T,>(list: T[], n: number, salt: number): T[] => {
+    const out: T[] = [];
+    const pool = [...list];
+    let s2 = (seed + salt * 7919) % 2147483647 || 7;
+    while (out.length < n && pool.length > 0) {
+      s2 = (s2 * 48271) % 2147483647;
+      out.push(pool.splice(s2 % pool.length, 1)[0]);
+    }
+    return out;
+  };
+  return [atk[0].id, ...pick(atk.slice(1), 2, 1).map((s) => s.id), ...pick(def, 1, 2).map((s) => s.id)];
 }
 
 export interface BattleSide {
@@ -67,6 +90,14 @@ export type BattleEvent =
 export function makeFighter(save: RobotSave, ai: boolean, uid: string): Fighter {
   const def = ROBOT_MAP[save.id];
   const st = totalStats(def, save, ai);
+  const kitIds = new Set(def.skills.map((s) => s.id));
+  const chosen = (save.loadout ?? []).filter((id) => kitIds.has(id)).slice(0, MAX_LOADOUT);
+  const skillIds =
+    chosen.length === MAX_LOADOUT
+      ? chosen
+      : ai
+        ? aiLoadout(save.id, save.level * 31 + save.id.length * 17)
+        : defaultLoadout(def.skills);
   return {
     uid,
     robotId: save.id,
@@ -81,7 +112,17 @@ export function makeFighter(save: RobotSave, ai: boolean, uid: string): Fighter 
     agl: st.agl,
     effects: [],
     ai,
+    skillIds,
+    counter: 0,
   };
+}
+
+/** Habilidades realmente disponíveis para o lutador nesta partida. */
+export function fighterSkills(f: Fighter): Skill[] {
+  const kit = ROBOT_MAP[f.robotId].skills;
+  return f.skillIds
+    .map((id) => kit.find((s) => s.id === id))
+    .filter((s): s is Skill => Boolean(s));
 }
 
 export function createBattle(args: {
@@ -176,7 +217,7 @@ export function effectLabel(type: EffectType): string {
 export function chooseAIAction(b: Battle): BattleAction {
   const me = activeOf(b, "enemy");
   const foe = activeOf(b, "player");
-  const skills = ROBOT_MAP[me.robotId].skills;
+  const skills = fighterSkills(me);
   const usable = skills.filter((s) => me.mp >= s.mp);
   const hpPct = me.hp / me.maxHp;
 
@@ -262,6 +303,14 @@ function doAttack(ctx: Ctx, side: Side, skill: Skill) {
   });
   if (crit) msg(ctx, "Golpe critico!");
 
+  if (vic.counter > 0 && vic.hp > 0) {
+    const back = Math.max(1, Math.round(dmg * 0.35));
+    atk.hp = Math.max(0, atk.hp - back);
+    push(ctx, { t: "vfx", side, url: "/vfx/thunder.png" });
+    push(ctx, { t: "float", side, text: `CONTRA -${back}`, tone: "crit" });
+    msg(ctx, `${vic.name} revidou o golpe!`);
+  }
+
   if (skill.effect && vic.hp > 0 && Math.random() < skill.effect.chance) {
     const ef = skill.effect;
     if (ef.type === "hp_regen" || ef.type === "adrenalin" || ef.type === "damage_reduction") {
@@ -280,11 +329,36 @@ function doAttack(ctx: Ctx, side: Side, skill: Skill) {
 function doDefense(ctx: Ctx, side: Side, skill: Skill) {
   const f = activeOf(ctx.b, side);
   f.mp = Math.max(0, f.mp - skill.mp);
-  applyEffect(f, "damage_reduction", skill.power, 2);
-  msg(ctx, `${f.name} usa ${skill.name} e reduz o dano recebido.`);
+  const spec = skill.defense ?? { kind: "guard" as const, turns: 2 };
+  msg(ctx, `${f.name} usa ${skill.name}!`);
   push(ctx, { t: "clip", side, clip: "guard" });
   push(ctx, { t: "vfx", side, url: skill.vfx });
-  push(ctx, { t: "float", side, text: `-${skill.power}% DANO`, tone: "info" });
+
+  if (spec.kind === "guard") {
+    applyEffect(f, "damage_reduction", skill.power, spec.turns);
+    push(ctx, { t: "float", side, text: `-${skill.power}% DANO`, tone: "info" });
+  } else if (spec.kind === "repair") {
+    const heal = Math.round((f.maxHp * (spec.percent ?? 30)) / 100);
+    f.hp = Math.min(f.maxHp, f.hp + heal);
+    applyEffect(f, "hp_regen", 6, spec.turns);
+    push(ctx, { t: "float", side, text: `+${heal}`, tone: "heal" });
+  } else if (spec.kind === "purge") {
+    const had = f.effects.length;
+    f.effects = f.effects.filter(
+      (e) => e.type === "adrenalin" || e.type === "damage_reduction" || e.type === "hp_regen",
+    );
+    applyEffect(f, "damage_reduction", skill.power, spec.turns);
+    push(ctx, { t: "float", side, text: had ? "PURIFICADO" : "BLINDADO", tone: "heal" });
+  } else if (spec.kind === "overcharge") {
+    const gain = Math.round((f.maxMp * (spec.percent ?? 30)) / 100);
+    f.mp = Math.min(f.maxMp, f.mp + gain);
+    applyEffect(f, "adrenalin", 30, spec.turns);
+    push(ctx, { t: "float", side, text: `+${gain} MP`, tone: "info" });
+  } else {
+    applyEffect(f, "damage_reduction", skill.power, spec.turns);
+    f.counter = spec.turns + 1;
+    push(ctx, { t: "float", side, text: "CONTRA-GOLPE", tone: "info" });
+  }
   sync(ctx);
 }
 
@@ -384,6 +458,7 @@ function tickEffects(ctx: Ctx, side: Side) {
     e.turns -= 1;
   }
   f.effects = f.effects.filter((e) => e.turns > 0);
+  if (f.counter > 0) f.counter -= 1;
   sync(ctx);
 }
 
