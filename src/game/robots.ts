@@ -1,32 +1,13 @@
-export type EffectType =
-  | "burn"
-  | "poison"
-  | "paralyze"
-  | "blind"
-  | "weakening"
-  | "drain"
-  | "damage_reduction"
-  | "adrenalin"
-  | "hp_regen"
-  | "trapped";
+import { buildKit, VFX, type Skill, type SkillEffect } from "./skills";
 
-export interface SkillEffect {
-  type: EffectType;
-  power: number;
-  turns: number;
-  chance: number;
-}
-
-export interface Skill {
-  id: string;
-  name: string;
-  kind: "attack" | "defense";
-  power: number;
-  mp: number;
-  vfx: string;
-  desc: string;
-  effect?: SkillEffect;
-}
+export type {
+  EffectType,
+  SkillEffect,
+  Skill,
+  DefenseKind,
+  DefenseSpec,
+} from "./skills";
+export { EFFECT_LABEL, MAX_LOADOUT, defaultLoadout } from "./skills";
 
 export interface Ratios {
   hp: number;
@@ -50,17 +31,6 @@ export interface RobotDef {
   bio: string;
 }
 
-const VFX = {
-  impact: "/vfx/impact.png",
-  slash: "/vfx/slash.png",
-  explosion: "/vfx/explosion.png",
-  heal: "/vfx/heal.png",
-  shield: "/vfx/shield.png",
-  levelup: "/vfx/levelup.png",
-  void: "/vfx/void.png",
-  thunder: "/vfx/thunder.png",
-} as const;
-
 interface Blueprint {
   id: string;
   name: string;
@@ -74,60 +44,15 @@ interface Blueprint {
   effect: SkillEffect;
 }
 
-const EFFECT_LABEL: Record<EffectType, string> = {
-  burn: "queimadura",
-  poison: "veneno",
-  paralyze: "paralisia",
-  blind: "cegueira",
-  weakening: "enfraquecimento",
-  drain: "dreno de energia",
-  damage_reduction: "blindagem",
-  adrenalin: "adrenalina",
-  hp_regen: "auto-reparo",
-  trapped: "aprisionamento",
-};
-
 function buildSkills(b: Blueprint): Skill[] {
-  const [n1, n2, n3, n4] = b.names;
-  return [
-    {
-      id: `${b.id}_basic`,
-      name: n1,
-      kind: "attack",
-      power: 4,
-      mp: 0,
-      vfx: VFX.impact,
-      desc: "Golpe básico, sem custo de energia.",
-    },
-    {
-      id: `${b.id}_strong`,
-      name: n2,
-      kind: "attack",
-      power: 7,
-      mp: 7,
-      vfx: b.vfxStrong,
-      desc: "Ataque pesado de alto dano.",
-    },
-    {
-      id: `${b.id}_special`,
-      name: n3,
-      kind: "attack",
-      power: 5.5,
-      mp: 12,
-      vfx: b.vfxSpecial,
-      desc: `Ataque elemental que aplica ${EFFECT_LABEL[b.effect.type]}.`,
-      effect: b.effect,
-    },
-    {
-      id: `${b.id}_guard`,
-      name: n4,
-      kind: "defense",
-      power: 45,
-      mp: 6,
-      vfx: VFX.shield,
-      desc: "Reduz o dano recebido por 2 turnos.",
-    },
-  ];
+  return buildKit({
+    id: b.id,
+    element: b.element,
+    names: b.names,
+    effect: b.effect,
+    vfxStrong: b.vfxStrong,
+    vfxSpecial: b.vfxSpecial,
+  });
 }
 
 const BLUEPRINTS: Blueprint[] = [
