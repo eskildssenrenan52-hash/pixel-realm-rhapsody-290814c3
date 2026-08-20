@@ -3,7 +3,7 @@ import { playerMaxXP } from "@/game/engine";
 import { useGame } from "@/game/save";
 import { StatBar } from "@/components/game/pixel";
 
-export type Screen = "menu" | "roster" | "shop" | "tournaments";
+export type Screen = "menu" | "roster" | "shop" | "tournaments" | "modes";
 
 export function MenuScreen({ onGo }: { onGo: (s: Screen) => void }) {
   const g = useGame();
@@ -60,6 +60,7 @@ export function MenuScreen({ onGo }: { onGo: (s: Screen) => void }) {
         </div>
         <StatBar kind="xp" value={g.playerXP} max={playerMaxXP(g.playerLevel)} width={340} />
         <PixelButton onClick={() => onGo("tournaments")}>TORNEIOS</PixelButton>
+        <PixelButton onClick={() => onGo("modes")}>MODOS DE JOGO</PixelButton>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <PixelButton onClick={() => onGo("roster")}>ROBOS</PixelButton>
           <PixelButton onClick={() => onGo("shop")}>LOJA</PixelButton>
@@ -73,7 +74,8 @@ export function MenuScreen({ onGo }: { onGo: (s: Screen) => void }) {
             paddingBottom: 34,
           }}
         >
-          {g.robots.length}/20 ROBOS · {g.wonTournaments.length}/5 COPAS · {g.battlesWon} VITORIAS
+          {g.robots.length} ROBOS · {g.wonTournaments.length} COPAS · {g.battlesWon} VITORIAS ·
+          BABEL {g.modes.babelBest}
         </div>
       </div>
     </div>
