@@ -449,18 +449,6 @@ function LoadoutPicker({ robotId }: { robotId: string }) {
   );
 }
 
-function StatRowUnused({ label, value }: { label: string; value: number }) {
-  return (
-    <div
-      className="mk-title"
-      style={{ fontSize: 7, display: "flex", justifyContent: "space-between", padding: "2px 0" }}
-    >
-      <span>{label}</span>
-      <span style={{ color: "var(--mk-text)" }}>{value}</span>
-    </div>
-  );
-}
-
 function TrainRow({
   label,
   base,
