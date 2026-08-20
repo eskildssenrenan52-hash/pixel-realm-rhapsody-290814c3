@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Frame, Icon, Panel, PixelButton, RobotSprite, StatBar } from "@/components/game/pixel";
 import { TRAIN_COST_PER_POINT } from "@/game/config";
 import { baseStats, maxTrained, robotMaxXP, type RobotSave } from "@/game/engine";
-import { addGold, setTeam, updateRobots, useGame } from "@/game/save";
+import { addGold, loadoutOf, setLoadout, setTeam, updateRobots, useGame } from "@/game/save";
 import { faceUrl, ROBOT_MAP, ROBOTS } from "@/game/robots";
+import { EFFECT_LABEL, MAX_LOADOUT } from "@/game/skills";
 
 const RARITY_GLOW: Record<string, string> = {
   bronze: "rgba(205,127,50,0.9)",
@@ -336,31 +337,7 @@ function RobotDetail({ save, onClose }: { save: RobotSave; onClose: () => void }
             onTrain={() => train("agl")}
           />
 
-          <div className="mk-title" style={{ fontSize: 8, margin: "10px 0 4px" }}>
-            HABILIDADES
-          </div>
-          {def.skills.map((s) => (
-            <div
-              key={s.id}
-              style={{
-                border: "2px solid rgba(53,226,240,0.35)",
-                background: "rgba(8,18,32,0.7)",
-                padding: 5,
-                marginBottom: 4,
-              }}
-            >
-              <div
-                className="mk-title"
-                style={{ fontSize: 7, display: "flex", justifyContent: "space-between" }}
-              >
-                <span>
-                  <Icon name={s.kind === "defense" ? "shield" : "fist"} size={10} /> {s.name}
-                </span>
-                <span style={{ color: "var(--mk-accent)" }}>{s.mp} MP</span>
-              </div>
-              <div style={{ fontSize: 10, color: "var(--mk-muted)" }}>{s.desc}</div>
-            </div>
-          ))}
+          <LoadoutPicker robotId={save.id} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
             <PixelButton onClick={toggleTeam}>{inTeam ? "TIRAR DA EQUIPE" : "ESCALAR"}</PixelButton>
@@ -380,6 +357,94 @@ function StatRow({ label, value }: { label: string; value: number }) {
     >
       <span>{label}</span>
       <span style={{ color: "var(--mk-text)" }}>{value}</span>
+    </div>
+  );
+}
+
+function LoadoutPicker({ robotId }: { robotId: string }) {
+  const g = useGame();
+  const def = ROBOT_MAP[robotId];
+  const chosen = loadoutOf(g, robotId);
+  const attacks = def.skills.filter((s) => s.kind !== "defense");
+  const defenses = def.skills.filter((s) => s.kind === "defense");
+
+  function toggle(id: string) {
+    if (chosen.includes(id)) {
+      if (chosen.length <= 1) return;
+      setLoadout(robotId, chosen.filter((x) => x !== id));
+    } else {
+      if (chosen.length >= MAX_LOADOUT) return;
+      setLoadout(robotId, [...chosen, id]);
+    }
+  }
+
+  function renderGroup(title: string, list: typeof def.skills) {
+    return (
+      <>
+        <div
+          className="mk-title"
+          style={{ fontSize: 7, color: "var(--mk-muted)", margin: "6px 0 3px" }}
+        >
+          {title}
+        </div>
+        {list.map((s) => {
+          const on = chosen.includes(s.id);
+          const full = !on && chosen.length >= MAX_LOADOUT;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => toggle(s.id)}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                border: `2px solid ${on ? "var(--mk-accent)" : "rgba(53,226,240,0.28)"}`,
+                background: on ? "rgba(53,226,240,0.16)" : "rgba(8,18,32,0.7)",
+                padding: 5,
+                marginBottom: 4,
+                opacity: full ? 0.45 : 1,
+                cursor: "pointer",
+              }}
+            >
+              <div
+                className="mk-title"
+                style={{ fontSize: 7, display: "flex", justifyContent: "space-between", gap: 6 }}
+              >
+                <span>
+                  <Icon name={s.kind === "defense" ? "shield" : "fist"} size={10} />{" "}
+                  {on ? "[X] " : "[ ] "}
+                  {s.name}
+                </span>
+                <span style={{ color: "var(--mk-accent)" }}>{s.mp} MP</span>
+              </div>
+              <div style={{ fontSize: 10, color: "var(--mk-muted)" }}>
+                {s.desc}
+                {s.effect ? ` · ${EFFECT_LABEL[s.effect.type]}` : ""}
+              </div>
+            </button>
+          );
+        })}
+      </>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div
+        className="mk-title"
+        style={{ fontSize: 8, display: "flex", justifyContent: "space-between" }}
+      >
+        <span>HABILIDADES DE COMBATE</span>
+        <span style={{ color: chosen.length === MAX_LOADOUT ? "var(--mk-accent)" : "#ff6b6b" }}>
+          {chosen.length}/{MAX_LOADOUT}
+        </span>
+      </div>
+      <div style={{ fontSize: 10, color: "var(--mk-muted)" }}>
+        Escolha {MAX_LOADOUT} entre {def.skills.length} para levar à partida.
+      </div>
+      {renderGroup(`ATAQUES (${attacks.length})`, attacks)}
+      {renderGroup(`DEFESAS (${defenses.length})`, defenses)}
     </div>
   );
 }
